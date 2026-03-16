@@ -1,0 +1,25 @@
+2026/03/14 20:53:19 Speakers Remote Control v.0.1.0 build 96
+2026/03/14 20:53:19 -h - подсказки параметров запуска
+2026/03/14 20:53:21 Сервер запущен на http://192.168.28.219:8084
+2026/03/14 20:53:59 📡 play → http://192.168.248.201/api/play?action=start&file=userfile1&mode=duration&count=5&volume=1
+2026/03/14 20:53:59 ✅ УСПЕХ 192.168.248.201 play → http://192.168.248.201/api/play?action=start&file=userfile1&mode=duration&count=5&volume=1
+OK
+2026/03/14 20:54:25 📡 play → http://192.168.88.250/api/play?action=start&file=userfile1&mode=once&volume=1
+2026/03/14 20:54:25 ✅ УСПЕХ 192.168.88.250 play → http://192.168.88.250/api/play?action=start&file=userfile1&mode=once&volume=1
+OK
+2026/03/14 20:59:37 Сервер запущен на http://192.168.28.219:8084
+2026/03/14 21:00:41 📡 play → http://192.168.248.201/api/play?action=start&file=userfile2&mode=once&volume=1
+2026/03/14 21:00:41 ✅ УСПЕХ 192.168.248.201 play → http://192.168.248.201/api/play?action=start&file=userfile2&mode=once&volume=1
+OK
+2026/03/14 21:00:42 📡 play → http://192.168.248.201/api/play?action=start&file=userfile1&mode=once&volume=1
+2026/03/14 21:00:42 ✅ УСПЕХ 192.168.248.201 play → http://192.168.248.201/api/play?action=start&file=userfile1&mode=once&volume=1
+OK
+2026/03/14 21:00:43 📡 play → http://192.168.248.201/api/play?action=start&file=userfile2&mode=once&volume=1
+2026/03/14 21:00:43 ✅ УСПЕХ 192.168.248.201 play → http://192.168.248.201/api/play?action=start&file=userfile2&mode=once&volume=1
+OK
+2026/03/14 21:00:44 📡 play → http://192.168.248.201/api/play?action=start&file=userfile1&mode=once&volume=1
+2026/03/14 21:00:44 ✅ УСПЕХ 192.168.248.201 play → http://192.168.248.201/api/play?action=start&file=userfile1&mode=once&volume=1
+OK
+2026/03/14 21:00:52 📡 play → http://192.168.254.201/api/play?action=start&file=userfile1&mode=duration&count=5&volume=1
+2026/03/14 21:00:52 ✅ УСПЕХ 192.168.254.201 play → http://192.168.254.201/api/play?action=start&file=userfile1&mode=duration&count=5&volume=1
+OK

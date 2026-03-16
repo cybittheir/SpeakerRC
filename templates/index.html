@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Remote Speakers</title>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; }
+        button { padding: 10px 20px; margin: 5px; border: none; border-radius: 5px; cursor: pointer; }
+        button:hover { opacity: 0.8; }
+        .play-btn { background: #4CAF50; color: white; }
+        .stop-btn { background: #f44336; color: white; }
+        .panel { border: 1px solid #ddd; padding: 20px; margin: 20px 0; border-radius: 8px; background: #fafafa; }
+        .param-row { display: flex; gap: 15px; margin: 10px 0; }
+        input[type=number] { width: 80px; padding: 5px; }
+        #result { min-height: 80px; padding: 20px; border: 2px solid #ddd; border-radius: 8px; margin-top: 20px; background: #f9f9f9; }
+        .loading { color: #666; font-style: italic; }
+        .success { color: #4CAF50; }
+        .error { color: #f44336; }
+    </style>
+</head>
+<body>
+    {{if not .Authenticated}}
+        <h1>🔒 Ввод секретного кода</h1>
+        <form id="authForm" onsubmit="login(event)">
+            <input type="password" id="secret" placeholder="Введите секретный код" required>
+            <button type="submit">Войти</button>
+        </form>
+    {{else}}
+        <div style="position: fixed; top: 10px; right: 10px;">
+            <button onclick="logout()">Выход</button>
+        </div>
+        
+        <h1>📢 Управление громкоговорителями</h1>
+        
+        <div>
+            <label>Точка: </label>
+            <select id="targetSelect" onchange="loadTargetFiles()">
+                {{range $ip, $target := .Targets}}
+                    <option value="{{$target.Alias}}">{{$target.Title}}</option>
+                {{end}}
+            </select>
+            <button onclick="refreshAllFiles()">🔄 Обновить все файлы</button>
+        </div>
+
+        <div id="filesPanel" style="display:none;">
+            {{range $targetName, $target := .Targets}}
+                <div id="panel-{{$target.Alias}}" class="panel" style="display:none;">
+                    <h3>{{$target.Title}}</h3>
+                    <div id="files-{{$target.Alias}}" class="loading">Загрузка файлов...</div>
+                    
+                    {{if $target.Params}}
+                        <div class="params-section">
+                            <h4>Параметры:</h4>
+                            <div class="param-row">
+                                {{range $pname, $p := $target.Params}}
+                                    {{- $label := "" -}}
+                                    {{- if eq $pname "duration" -}}
+                                        {{- $label = "Длительность (до 3600 сек.)" -}}
+                                    {{- else if eq $pname "multiply" -}}
+                                        {{- $label = "Повторы (1-99)" -}}
+                                    {{- else if eq $pname "volume" -}}
+                                        {{- $label = "Громкость (1-100)" -}}
+                                    {{- else -}}
+                                        {{- $label = $pname -}}
+                                    {{- end -}}
+                                    <label>{{$label}}:
+                                        <input type="number" name="{{$pname}}"
+                                               min="{{$p.Min}}" max="{{$p.Max}}" value="{{$p.Default}}" step="1">
+                                    </label>
+                                {{end}}
+                            </div>
+                        </div>
+                    {{end}}
+                    
+                    <div id="controls-{{$target.Alias}}" style="margin-top: 15px;"></div>
+                </div>
+            {{end}}
+        </div>
+
+        <div id="result">Готов к работе...</div>
+    {{end}}
+
+    <script>
+        let currentTarget = '';
+        const filesCache = {};
+        let stopTimers = {}; // target::file -> timeoutId
+        const authenticated = {{.Authenticated}};
+        const REPEAT_DURATION_SECONDS = {{.RepeatDurationSeconds}};
+
+        function getSelectedAlias() {
+            const select = document.getElementById("targetSelect");
+            return select.value; // здесь уже alias, не IP
+        }
+
+
+        // Общий обработчик для fetch: если 401 → вернуть на страницу логина
+        function handleAuthFetch(response) {
+            if (response.status === 401) {
+                window.location.href = '/';
+                return Promise.reject('Unauthorized');
+            }
+            return response;
+        }
+
+        function login(event) {
+            event.preventDefault();
+            const secret = document.getElementById('secret').value;
+            fetch('/auth', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({secret: secret})
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.authenticated) {
+                    location.reload();
+                    return;
+                }
+
+                if (data.locked) {
+                    alert(
+                        (data.message || 'IP заблокирован') +
+                        (data.remainingMinutes ? ` (осталось ~${data.remainingMinutes} мин)` : '')
+                    );
+                    return;
+                }
+
+                if (data.remainingAttempts !== undefined) {
+                    alert(
+                        (data.message || 'Неверный пароль') +
+                        `\nОсталось попыток: ${data.remainingAttempts}`
+                    );
+                } else {
+                    alert('Неверный пароль');
+                }
+                document.getElementById('secret').value = '';
+            })
+            .catch(err => alert('Ошибка: ' + err));
+        }
+
+        function logout() {
+            fetch('/logout').then(() => location.reload());
+        }
+
+        function loadTargetFiles() {
+            const select = document.getElementById('targetSelect');
+            currentTarget = select.value;
+
+            document.querySelectorAll('.panel').forEach(panel => {
+                panel.style.display = 'none';
+            });
+
+            const panel = document.getElementById('panel-' + currentTarget);
+            if (panel) {
+                panel.style.display = 'block';
+                document.getElementById('filesPanel').style.display = 'block';
+                renderTargetFiles(currentTarget);
+            }
+        }
+
+        function renderTargetFiles(targetName) {
+            const filesDiv = document.getElementById('files-' + targetName);
+            const controlsDiv = document.getElementById('controls-' + targetName);
+            filesDiv.innerHTML = '<div class="loading">Получение списка файлов...</div>';
+
+            fetch(`/api/${targetName}/files`)
+                .then(handleAuthFetch)
+                .then(r => r.json())
+                .then(data => {
+                    if (data.error) {
+                        filesDiv.innerHTML = `<div style="color: red;">Ошибка: ${data.error}</div>`;
+                        return;
+                    }
+                    filesCache[targetName] = data.files;
+                    renderFileButtons(targetName, data.files);
+                })
+                .catch(err => {
+                    if (err === 'Unauthorized') return;
+                    filesDiv.innerHTML = `<div style="color: red;">Сетевая ошибка: ${err}</div>`;
+                });
+        }
+
+        function renderFileButtons(targetName, files) {
+            const filesDiv = document.getElementById('files-' + targetName);
+            const controlsDiv = document.getElementById('controls-' + targetName);
+            if (!files || files.length === 0) {
+                filesDiv.innerHTML = '<div style="color: orange;">Файлы не найдены</div>';
+                return;
+            }
+
+            let html = '<h4>Файлы:</h4><div style="display: flex; flex-wrap: wrap; gap: 10px;">';
+            files.forEach(file => {
+                html += `<button class="play-btn" onclick="playFile('${targetName}', '${file.Name}')">${file.Name}</button>`;
+            });
+            html += '</div>';
+            filesDiv.innerHTML = html;
+            controlsDiv.innerHTML = '';
+        }
+
+function showStopButton(targetName, filename, durationSeconds, mode) {
+    const controlsDiv = document.getElementById('controls-' + targetName);
+    const key = targetName + '::' + filename;
+
+    if (stopTimers[key]) {
+        clearTimeout(stopTimers[key]);
+        delete stopTimers[key];
+    }
+
+    const stopBtn = document.createElement('button');
+    stopBtn.className = 'stop-btn';
+    stopBtn.textContent = '🛑 Стоп для ' + filename;
+    stopBtn.onclick = () => stopFile(targetName, filename);
+    controlsDiv.innerHTML = '';
+    controlsDiv.appendChild(stopBtn);
+
+    if (durationSeconds && durationSeconds > 0) {
+        stopTimers[key] = setTimeout(() => {
+            if (mode === 'duration') {
+                // по заданной длительности — убираем кнопку
+                const div = document.getElementById('controls-' + targetName);
+                if (div) {
+                    div.innerHTML = '';
+                }
+            } else if (mode === 'repeat') {
+                // повторы — оставляем, но делаем жёлтой/«сомнительной»
+                stopBtn.style.backgroundColor = 'gold';
+                stopBtn.textContent = '⚠ Может уже закончилось: ' + filename;
+            }
+            delete stopTimers[key];
+        }, durationSeconds * 1000);
+    }
+}
+
+function updateDurationState(targetName) {
+    const panel = document.getElementById('panel-' + targetName);
+    if (!panel) return;
+
+    const multiplyInput = panel.querySelector('input[name="multiply"]');
+    const durationInput = panel.querySelector('input[name="duration"]');
+
+    if (!multiplyInput || !durationInput) {
+        return;
+    }
+
+    const multiply = parseInt(multiplyInput.value || '1', 10);
+
+    if (multiply > 1) {
+        // блокируем/«гасим» длительность
+        durationInput.disabled = true;
+        durationInput.style.opacity = '0.5';
+    } else {
+        // восстанавливаем
+        durationInput.disabled = false;
+        durationInput.style.opacity = '1';
+    }
+}
+
+        function playFile(targetName, filename) {
+            const panel = document.getElementById('panel-' + targetName);
+            const inputs = panel.querySelectorAll('input[type="number"]');
+            const params = new URLSearchParams();
+
+            inputs.forEach(input => params.append(input.name, input.value));
+
+            const url = `/api/${targetName}/play?action=play&target=${targetName}&file=${encodeURIComponent(filename)}&${params}`;
+
+            showStatus('Отправка PLAY...');
+            fetch(url)
+                .then(handleAuthFetch)
+                .then(r => r.text())
+                .then(data => {
+                    showStatus(data, 'success');
+                    const duration = parseInt(params.get('duration') || '0');
+                    const multiply = parseInt(params.get('multiply') || '1');
+                 if (multiply > 1) {
+                    const approxTotal = REPEAT_DURATION_SECONDS * multiply;
+                    showStopButton(targetName, filename, approxTotal,'repeat');
+                } else if (duration > 0) {
+                    showStopButton(targetName, filename, duration,'duration');
+                }
+                })
+                .catch(err => {
+                    if (err === 'Unauthorized') return;
+                    showStatus(`Ошибка: ${err}`, 'error');
+                });
+        }
+
+        function stopFile(targetName, filename) {
+            const url = `/api/${targetName}/play?action=stop&target=${targetName}&file=${encodeURIComponent(filename)}`;
+            showStatus('Отправка STOP...');
+            fetch(url)
+                .then(handleAuthFetch)
+                .then(r => r.text())
+                .then(data => {
+                    showStatus(data, 'success');
+                    const key = targetName + '::' + filename;
+                    if (stopTimers[key]) {
+                        clearTimeout(stopTimers[key]);
+                        delete stopTimers[key];
+                    }
+                    document.getElementById('controls-' + targetName).innerHTML = '';
+                })
+                .catch(err => {
+                    if (err === 'Unauthorized') return;
+                    showStatus(`Ошибка STOP: ${err}`, 'error');
+                });
+        }
+
+        function refreshAllFiles() {
+            fetch('/refresh-files')
+                .then(handleAuthFetch)
+                .then(() => {
+                    loadTargetFiles();
+                    showStatus('Файлы обновлены');
+                })
+                .catch(err => {
+                    if (err === 'Unauthorized') return;
+                    showStatus(`Ошибка обновления: ${err}`, 'error');
+                });
+        }
+
+        function showStatus(message, type = '') {
+            const resultDiv = document.getElementById('result');
+            resultDiv.textContent = message;
+            if (type === 'success') resultDiv.className = 'success';
+            else if (type === 'error') resultDiv.className = 'error';
+            else resultDiv.className = '';
+        }
+
+        function initParamHandlers() {
+    // Для каждой панели ищем multiply и навешиваем обработчик
+    document.querySelectorAll('.panel').forEach(panel => {
+        const targetName = panel.id.replace('panel-', '');
+        const multiplyInput = panel.querySelector('input[name="multiply"]');
+        if (multiplyInput) {
+            multiplyInput.addEventListener('input', () => {
+                updateDurationState(targetName);
+            });
+            // сразу привести в нужное состояние при загрузке
+            updateDurationState(targetName);
+        }
+    });
+}
+
+if (authenticated) {
+    setTimeout(() => {
+        const select = document.getElementById('targetSelect');
+        if (select.options.length > 0) {
+            select.value = select.options[0].value; // это уже alias
+            loadTargetFiles();
+        }
+                initParamHandlers();
+
+    }, 200);
+}
+    </script>
+</body>
+</html>

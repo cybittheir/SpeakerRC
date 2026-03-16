@@ -1,0 +1,39 @@
+{
+  "app": {
+    "listenHost": "127.0.0.1",
+    "listenPort": ":8080",
+    "secretHash": "$2a$10$NYGbUPcZzs2FKvBWfR/sxeZ4YxYItZz9Olw6TPX0uw27WzxyAX6AS",
+    "bruteforce": {
+      "maxAttempts": 3,        
+      "lockoutMinutes": 1     
+    },
+  "repeatDurationSeconds": 10,
+  "sessionTimeoutMinutes": 3
+  },
+  "targets": { 
+    "192.168.1.1": {
+      "title": "Speaker",
+      "protocol": "http",
+      "playQuery": "/api/play?action=start",
+      "stopQuery": "/api/play?action=stop",
+      "configQuery": "/cgi-bin/CGI?config=musicfile.get",
+      "params": {
+        "duration": {"min": 0, "max": 3600, "default": 0},
+        "volume": {"min": 1, "max": 100, "default": 1},
+        "multiply": {"min": 1, "max": 99, "default": 1}
+      }
+    },
+    "192.168.0.1": {
+      "title": "LoadSpeaker",
+      "protocol": "http",
+      "playQuery": "/api/play?action=start",
+      "stopQuery": "/api/play?action=stop",
+      "configQuery": "/cgi-bin/CGI?config=musicfile.get",
+      "params": {
+        "duration": {"min": 0, "max": 3600, "default": 0},
+        "volume": {"min": 1, "max": 100, "default": 1},
+        "multiply": {"min": 1, "max": 99, "default": 1}
+      }
+    }
+  }
+}
