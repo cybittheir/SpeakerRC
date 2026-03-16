@@ -29,4 +29,10 @@ go.work.sum
 
 # Editor/IDE
 # .idea/
+<<<<<<< HEAD
+ .vscode/
+*.json
+config.json
+=======
 # .vscode/
+>>>>>>> 9e29874718bf78332a0786258ca71b45cca1df9d
